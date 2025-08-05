@@ -1,0 +1,13 @@
+prefix=e:/annotation_llm_privit/Annotation_NER_LLM_Privat/react/.conda/Library
+exec_prefix=e:/annotation_llm_privit/Annotation_NER_LLM_Privat/react/.conda/Library
+libdir=e:/annotation_llm_privit/Annotation_NER_LLM_Privat/react/.conda/Library/lib
+sharedlibdir=e:/annotation_llm_privit/Annotation_NER_LLM_Privat/react/.conda/Library/lib
+includedir=e:/annotation_llm_privit/Annotation_NER_LLM_Privat/react/.conda/Library/include
+
+Name: zlib
+Description: zlib compression library
+Version: 1.2.13
+
+Requires:
+Libs: -L${libdir} -L${sharedlibdir} -lz
+Cflags: -I${includedir}
