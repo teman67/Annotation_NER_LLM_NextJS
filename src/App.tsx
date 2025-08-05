@@ -26,9 +26,6 @@ import ProfilePage from "./pages/ProfilePage";
 import { AuthProvider } from "./contexts/AuthContext";
 import { useAuth } from "./hooks/useAuth";
 
-// Import styles
-import "./styles.css";
-
 // Create a client
 const queryClient = new QueryClient({
   defaultOptions: {
