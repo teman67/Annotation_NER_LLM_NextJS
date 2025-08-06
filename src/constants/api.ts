@@ -21,6 +21,9 @@ export const API_ENDPOINTS = {
   USERS: {
     PROFILE: "/users/profile",
     UPDATE_PROFILE: "/users/profile",
+    API_KEYS: "/users/api-keys",
+    UPDATE_API_KEYS: "/users/api-keys",
+    DECRYPTED_API_KEYS: "/users/api-keys/decrypted",
   },
   PROJECTS: {
     LIST: "/projects",
@@ -41,7 +44,9 @@ export const API_ENDPOINTS = {
     GET: (id: string) => `/annotations/${id}`,
     UPDATE: (id: string) => `/annotations/${id}`,
     DELETE: (id: string) => `/annotations/${id}`,
-    GENERATE: "/annotations/generate",
+    GENERATE: "/annotations/annotate",
+    ESTIMATE_COST: "/annotations/estimate-cost",
+    AVAILABLE_MODELS: "/annotations/available-models",
   },
   TAGS: {
     LIST: "/tags",

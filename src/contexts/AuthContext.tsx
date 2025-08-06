@@ -26,15 +26,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     const getSession = async () => {
       setLoading(true);
       try {
+        const token = localStorage.getItem("access_token");
+        const headers: Record<string, string> = {};
+
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
+
         const res = await fetch(
           `${API_CONFIG.BASE_URL}${API_ENDPOINTS.AUTH.SESSION}`,
           {
             credentials: "include",
+            headers,
           }
         );
+
         if (res.ok) {
           const data = await res.json();
           setUser(data.user ? convertUser(data.user) : null);
+        } else if (res.status === 401) {
+          // Token is invalid, clear it
+          localStorage.removeItem("access_token");
+          setUser(null);
         } else {
           setUser(null);
         }
@@ -70,6 +83,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       const data = await res.json();
+
+      // Store the access token if provided
+      if (data.access_token) {
+        localStorage.setItem("access_token", data.access_token);
+      }
+
       setUser(data.user ? convertUser(data.user) : null);
       toast.success("Successfully signed in!");
     } catch (error) {
@@ -145,6 +164,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         throw new Error(errorMessage);
       }
 
+      // Clear the access token
+      localStorage.removeItem("access_token");
       setUser(null);
       toast.success("Successfully signed out!");
     } catch (error) {

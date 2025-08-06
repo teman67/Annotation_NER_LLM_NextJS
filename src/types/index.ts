@@ -46,6 +46,96 @@ export interface ProjectFile {
   chunks?: TextChunk[];
 }
 
+// Annotation types
+export interface Tag {
+  tag_name: string;
+  definition: string;
+  examples: string;
+}
+
+export interface Entity {
+  start_char: number;
+  end_char: number;
+  text: string;
+  label: string;
+  confidence?: number;
+  source?: "llm" | "manual";
+}
+
+export interface AnnotationResult {
+  entities: Entity[];
+  statistics: {
+    total_entities: number;
+    chunks_processed: number;
+    total_input_tokens: number;
+    total_output_tokens: number;
+    total_tokens: number;
+  };
+  chunk_results?: Array<{
+    chunk_id: number;
+    entities_found: number;
+    input_tokens: number;
+    output_tokens: number;
+  }>;
+}
+
+export interface ValidationError {
+  entity_index: number;
+  error: string;
+  expected_text: string;
+  actual_text?: string;
+  start_char: number;
+  end_char: number;
+  label: string;
+}
+
+export interface ValidationWarning {
+  type: string;
+  message?: string;
+  entity_index?: number;
+  position?: number;
+}
+
+export interface ValidationResult {
+  total_entities: number;
+  correct_entities: number;
+  errors: ValidationError[];
+  warnings: ValidationWarning[];
+}
+
+export interface EvaluationResult {
+  entity_index: number;
+  is_correct: boolean;
+  recommendation: "keep" | "change_label" | "delete";
+  reasoning: string;
+  suggested_label: string;
+  confidence: number;
+}
+
+export interface FixAnnotationsResult {
+  fixed_annotations: Entity[];
+  fix_statistics: {
+    total: number;
+    fixed: number;
+    unfixable: number;
+  };
+}
+
+export interface ExportResult {
+  content: string;
+  filename: string;
+  mime_type: string;
+}
+
+export interface CostEstimate {
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  input_cost: number;
+  output_cost: number;
+  total_cost: number;
+}
+
 export interface TextChunk {
   id: string;
   file_id: string;

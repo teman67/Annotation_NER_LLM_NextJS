@@ -528,8 +528,11 @@ async def logout():
 
 # Session endpoint for frontend to get current user
 @router.get("/session")
-async def get_session(request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_session(request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))):
     try:
+        if not credentials:
+            return {"user": None}
+            
         token = credentials.credentials
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         email: str = payload.get("sub")
