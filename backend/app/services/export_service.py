@@ -118,7 +118,7 @@ class ExportService:
                 "# Format: CSV",
                 "#"
             ]
-            csv_content = "\\n".join(header_comments) + "\\n" + csv_content
+            csv_content = "\n".join(header_comments) + "\n" + csv_content
         
         return {
             "content": csv_content,
@@ -179,12 +179,12 @@ class ExportService:
             ])
         
         for token, tag in zip(tokens, bio_tags):
-            conll_lines.append(f"{token}\\t{tag}")
+            conll_lines.append(f"{token}\t{tag}")
         
         # Add sentence boundary
         conll_lines.append("")
         
-        conll_content = "\\n".join(conll_lines)
+        conll_content = "\n".join(conll_lines)
         
         return {
             "content": conll_content,

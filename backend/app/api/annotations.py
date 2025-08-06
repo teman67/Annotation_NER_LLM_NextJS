@@ -448,6 +448,7 @@ async def export_annotations(
 ):
     """Export annotations in various formats"""
     from app.services.export_service import ExportService
+    from fastapi.responses import Response
     
     try:
         export_service = ExportService()
@@ -458,7 +459,14 @@ async def export_annotations(
             request.include_metadata
         )
         
-        return export_result
+        # Return the content as a file response
+        return Response(
+            content=export_result["content"],
+            media_type=export_result["mime_type"],
+            headers={
+                "Content-Disposition": f"attachment; filename={export_result['filename']}"
+            }
+        )
         
     except Exception as e:
         raise HTTPException(

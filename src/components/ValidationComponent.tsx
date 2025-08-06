@@ -16,20 +16,19 @@ interface AnnotationEntity {
 }
 
 interface ValidationResult {
-  is_valid: boolean;
+  total_entities: number;
+  correct_entities: number;
   errors: Array<{
     entity_index: number;
-    error_type: string;
-    message: string;
-    suggestion?: string;
+    error: string;
+    start_char: number;
+    end_char: number;
+    expected_text: string;
+    actual_text?: string;
+    label: string;
   }>;
-  fixed_entities?: AnnotationEntity[];
-  statistics: {
-    total_entities: number;
-    valid_entities: number;
-    fixed_entities: number;
-    errors_found: number;
-  };
+  warnings: Array<unknown>;
+  timestamp: string;
 }
 
 interface ValidationProps {
@@ -48,10 +47,23 @@ const ValidationComponent: React.FC<ValidationProps> = ({
   const [validationResult, setValidationResult] =
     useState<ValidationResult | null>(null);
 
+  console.log("ValidationComponent rendered with:", {
+    textLength: text.length,
+    entitiesCount: entities.length,
+    hasValidationResult: !!validationResult,
+  });
+
+  console.log("Rendering ValidationComponent - return statement reached");
+
   const handleValidate = async () => {
     if (!entities.length) return;
 
     setIsValidating(true);
+    console.log("Starting validation with:", {
+      text: text.substring(0, 100),
+      entities: entities.length,
+    });
+
     try {
       const response = await fetch(
         `${API_CONFIG.API_BASE_URL}/annotations/validate`,
@@ -68,15 +80,24 @@ const ValidationComponent: React.FC<ValidationProps> = ({
         }
       );
 
+      console.log("Validation response status:", response.status);
+
       if (!response.ok) {
-        throw new Error("Validation failed");
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Validation error response:", errorData);
+        throw new Error(errorData.detail || "Validation failed");
       }
 
       const result: ValidationResult = await response.json();
+      console.log("Validation result:", result);
       setValidationResult(result);
     } catch (error) {
       console.error("Validation error:", error);
-      alert("Validation failed. Please try again.");
+      alert(
+        `Validation failed: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     } finally {
       setIsValidating(false);
     }
@@ -85,7 +106,9 @@ const ValidationComponent: React.FC<ValidationProps> = ({
   const handleFix = async () => {
     if (!entities.length) return;
 
+    console.log("Starting fix with entities:", entities.length);
     setIsFixing(true);
+
     try {
       const response = await fetch(
         `${API_CONFIG.API_BASE_URL}/annotations/fix`,
@@ -103,18 +126,54 @@ const ValidationComponent: React.FC<ValidationProps> = ({
         }
       );
 
+      console.log("Fix response status:", response.status);
+
       if (!response.ok) {
-        throw new Error("Fix failed");
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Fix error response:", errorData);
+        throw new Error(errorData.detail || "Fix failed");
       }
 
-      const result: ValidationResult = await response.json();
-      if (result.fixed_entities) {
-        onEntitiesUpdate(result.fixed_entities);
-        setValidationResult(result);
+      const result = await response.json();
+      console.log("Fix result:", result);
+
+      // Update validation result if we got new validation data
+      if (result.fixed_annotations) {
+        console.log(
+          "Updating entities with fixed annotations:",
+          result.fixed_annotations.length
+        );
+        onEntitiesUpdate(result.fixed_annotations);
+      }
+
+      // Show detailed fix results
+      const stats = result.fix_statistics;
+      if (stats) {
+        const message =
+          `Fix completed!\n\n` +
+          `📊 Results:\n` +
+          `• Total annotations: ${stats.total}\n` +
+          `• Already correct: ${stats.already_correct}\n` +
+          `• Fixed: ${stats.fixed}\n` +
+          `• Unfixable: ${stats.unfixable}\n` +
+          `• Multiple matches: ${stats.multiple_matches || 0}\n` +
+          `• Strategy used: ${stats.strategy_used}`;
+
+        alert(message);
+      } else {
+        alert(
+          `Fix completed! Updated ${
+            result.fixed_annotations?.length || 0
+          } annotations.`
+        );
       }
     } catch (error) {
       console.error("Fix error:", error);
-      alert("Fix failed. Please try again.");
+      alert(
+        `Fix failed: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     } finally {
       setIsFixing(false);
     }
@@ -183,13 +242,13 @@ const ValidationComponent: React.FC<ValidationProps> = ({
               {/* Summary */}
               <div
                 className={`rounded-lg p-4 ${
-                  validationResult.is_valid
+                  validationResult.errors.length === 0
                     ? "bg-green-50 border border-green-200"
                     : "bg-red-50 border border-red-200"
                 }`}
               >
                 <div className="flex items-center">
-                  {validationResult.is_valid ? (
+                  {validationResult.errors.length === 0 ? (
                     <CheckCircleIcon className="h-5 w-5 text-green-600 mr-2" />
                   ) : (
                     <ExclamationTriangleIcon className="h-5 w-5 text-red-600 mr-2" />
@@ -197,31 +256,24 @@ const ValidationComponent: React.FC<ValidationProps> = ({
                   <div>
                     <h4
                       className={`font-medium ${
-                        validationResult.is_valid
+                        validationResult.errors.length === 0
                           ? "text-green-800"
                           : "text-red-800"
                       }`}
                     >
-                      {validationResult.is_valid
+                      {validationResult.errors.length === 0
                         ? "All annotations are valid!"
                         : "Issues found in annotations"}
                     </h4>
                     <div
                       className={`text-sm mt-1 ${
-                        validationResult.is_valid
+                        validationResult.errors.length === 0
                           ? "text-green-600"
                           : "text-red-600"
                       }`}
                     >
-                      {validationResult.statistics.valid_entities} valid out of{" "}
-                      {validationResult.statistics.total_entities} entities
-                      {validationResult.statistics.fixed_entities > 0 && (
-                        <span>
-                          {" "}
-                          • {validationResult.statistics.fixed_entities}{" "}
-                          entities were automatically fixed
-                        </span>
-                      )}
+                      {validationResult.correct_entities} valid out of{" "}
+                      {validationResult.total_entities} entities
                     </div>
                   </div>
                 </div>
@@ -241,17 +293,17 @@ const ValidationComponent: React.FC<ValidationProps> = ({
                           <ExclamationTriangleIcon className="h-4 w-4 text-yellow-600 mr-2 mt-0.5 flex-shrink-0" />
                           <div className="flex-1">
                             <div className="text-sm font-medium text-yellow-800">
-                              Entity #{error.entity_index + 1}:{" "}
-                              {error.error_type}
+                              Entity #{error.entity_index + 1}: {error.label}
                             </div>
                             <div className="text-sm text-yellow-700 mt-1">
-                              {error.message}
+                              {error.error}
                             </div>
-                            {error.suggestion && (
-                              <div className="text-sm text-yellow-600 mt-1 italic">
-                                💡 {error.suggestion}
-                              </div>
-                            )}
+                            <div className="text-sm text-gray-500 mt-1">
+                              Expected: "{error.expected_text}"
+                              {error.actual_text &&
+                                ` | Got: "${error.actual_text}"`}{" "}
+                              (chars {error.start_char}-{error.end_char})
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -264,28 +316,22 @@ const ValidationComponent: React.FC<ValidationProps> = ({
                 <h5 className="font-medium text-gray-900 mb-2">
                   Validation Statistics:
                 </h5>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                   <div className="text-center">
                     <div className="text-lg font-semibold text-blue-600">
-                      {validationResult.statistics.total_entities}
+                      {validationResult.total_entities}
                     </div>
                     <div className="text-gray-500">Total</div>
                   </div>
                   <div className="text-center">
                     <div className="text-lg font-semibold text-green-600">
-                      {validationResult.statistics.valid_entities}
+                      {validationResult.correct_entities}
                     </div>
                     <div className="text-gray-500">Valid</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-lg font-semibold text-orange-600">
-                      {validationResult.statistics.fixed_entities}
-                    </div>
-                    <div className="text-gray-500">Fixed</div>
-                  </div>
-                  <div className="text-center">
                     <div className="text-lg font-semibold text-red-600">
-                      {validationResult.statistics.errors_found}
+                      {validationResult.errors.length}
                     </div>
                     <div className="text-gray-500">Errors</div>
                   </div>
