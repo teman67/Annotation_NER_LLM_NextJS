@@ -16,6 +16,8 @@ class LLMService:
         self.openai_client = None
         self.anthropic_client = None
         
+        print(f"🤖 Initializing LLM service with user_api_keys: {user_api_keys is not None}")
+        
         # Use user-specific API keys if provided, otherwise fallback to system keys
         openai_key = None
         anthropic_key = None
@@ -23,19 +25,28 @@ class LLMService:
         if user_api_keys:
             openai_key = user_api_keys.get("openai_api_key")
             anthropic_key = user_api_keys.get("anthropic_api_key")
+            print(f"🔑 User keys - OpenAI: {openai_key[:10] + '...' if openai_key else 'None'}, Anthropic: {anthropic_key[:15] + '...' if anthropic_key else 'None'}")
         
         # Fallback to system keys if user keys not available
         if not openai_key:
             openai_key = settings.openai_api_key
+            print(f"🔄 Falling back to system OpenAI key: {openai_key[:10] + '...' if openai_key else 'None'}")
         if not anthropic_key:
             anthropic_key = settings.anthropic_api_key
+            print(f"🔄 Falling back to system Anthropic key: {anthropic_key[:15] + '...' if anthropic_key else 'None'}")
         
         # Initialize clients
         if openai_key and self._is_valid_openai_key(openai_key):
             self.openai_client = openai.OpenAI(api_key=openai_key)
+            print(f"✅ OpenAI client initialized successfully")
+        else:
+            print(f"❌ OpenAI client not initialized - key valid: {self._is_valid_openai_key(openai_key) if openai_key else False}")
         
         if anthropic_key and self._is_valid_anthropic_key(anthropic_key):
             self.anthropic_client = anthropic.Anthropic(api_key=anthropic_key)
+            print(f"✅ Anthropic client initialized successfully")
+        else:
+            print(f"❌ Anthropic client not initialized - key valid: {self._is_valid_anthropic_key(anthropic_key) if anthropic_key else False}")
     
     def _is_valid_openai_key(self, key: str) -> bool:
         """Check if OpenAI API key format is valid"""
@@ -103,26 +114,38 @@ class LLMService:
     
     def chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 50) -> List[Dict[str, Any]]:
         """Split text into overlapping chunks for processing"""
+        print(f"🔍 Chunking text: {len(text)} chars, chunk_size={chunk_size}, overlap={overlap}")
+        
         if len(text) <= chunk_size:
+            print(f"✅ Text fits in single chunk")
             return [{"text": text, "start_char": 0, "end_char": len(text), "chunk_id": 0}]
+        
+        # Validate overlap parameter
+        if overlap >= chunk_size:
+            print(f"⚠️  Overlap ({overlap}) >= chunk_size ({chunk_size}), reducing overlap to {chunk_size // 2}")
+            overlap = chunk_size // 2
         
         chunks = []
         start = 0
         chunk_id = 0
+        max_chunks = (len(text) // (chunk_size - overlap)) + 2  # Safety limit
         
-        while start < len(text):
+        print(f"📊 Expected max chunks: {max_chunks}")
+        
+        while start < len(text) and len(chunks) < max_chunks:
             end = min(start + chunk_size, len(text))
             
             # Try to break at sentence boundaries
             if end < len(text):
                 # Look for sentence endings within the last 200 characters
-                last_period = text.rfind('.', start, end)
-                last_exclamation = text.rfind('!', start, end)
-                last_question = text.rfind('?', start, end)
+                search_start = max(start, end - 200)
+                last_period = text.rfind('.', search_start, end)
+                last_exclamation = text.rfind('!', search_start, end)
+                last_question = text.rfind('?', search_start, end)
                 
                 best_break = max(last_period, last_exclamation, last_question)
                 
-                if best_break > start + chunk_size - 200:
+                if best_break > search_start:
                     end = best_break + 1
             
             chunk_text = text[start:end]
@@ -133,10 +156,22 @@ class LLMService:
                 "chunk_id": chunk_id
             })
             
-            # Move start position with overlap
-            start = end - overlap
+            print(f"📄 Chunk {chunk_id}: chars {start}-{end} ({end-start} chars)")
+            
+            # Move start position with overlap, ensuring we always make progress
+            next_start = end - overlap
+            if next_start <= start:
+                # Prevent infinite loop: ensure we always advance by at least 1 character
+                next_start = start + max(1, chunk_size - overlap)
+                print(f"⚠️  Adjusted start position to prevent infinite loop: {start} -> {next_start}")
+            
+            start = next_start
             chunk_id += 1
         
+        if len(chunks) >= max_chunks:
+            print(f"⚠️  Hit chunk limit ({max_chunks}), possible infinite loop prevented")
+        
+        print(f"✅ Created {len(chunks)} chunks")
         return chunks
     
     async def run_annotation_pipeline(

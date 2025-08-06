@@ -14,28 +14,12 @@ interface AnnotationEntity {
   source?: "llm" | "manual";
 }
 
-interface AnnotationResult {
-  entities: AnnotationEntity[];
-  statistics: {
-    total_entities: number;
-    chunks_processed: number;
-    total_input_tokens: number;
-    total_output_tokens: number;
-    total_tokens: number;
-  };
-}
-
 interface ExportProps {
   text: string;
   entities: AnnotationEntity[];
-  annotationResult: AnnotationResult | null;
 }
 
-const ExportComponent: React.FC<ExportProps> = ({
-  text,
-  entities,
-  annotationResult,
-}) => {
+const ExportComponent: React.FC<ExportProps> = ({ text, entities }) => {
   const [isExporting, setIsExporting] = useState(false);
   const [exportFormat, setExportFormat] = useState<
     "json" | "csv" | "conll" | "comprehensive"
@@ -56,10 +40,9 @@ const ExportComponent: React.FC<ExportProps> = ({
           },
           body: JSON.stringify({
             text,
-            entities,
-            format: exportFormat,
-            include_statistics: true,
-            annotation_result: annotationResult,
+            annotations: entities,
+            format_type: exportFormat,
+            include_metadata: true,
           }),
         }
       );

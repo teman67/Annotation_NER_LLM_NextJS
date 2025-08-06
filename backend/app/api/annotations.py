@@ -88,12 +88,31 @@ async def create_annotation(
         # Get user's API keys
         user_api_keys = None
         try:
-            api_keys_result = db.table("user_api_keys").select("*").eq("user_id", current_user["id"]).execute()
+            # Use admin database to access user_api_keys table (due to RLS policies)
+            from app.database import get_admin_db
+            admin_db = get_admin_db()
+            
+            print(f"🔍 Looking up API keys for user ID: {current_user['id']} (type: {type(current_user['id'])})")
+            print(f"🔍 User email: {current_user.get('email', 'unknown')}")
+            
+            api_keys_result = admin_db.table("user_api_keys").select("*").eq("user_id", current_user["id"]).execute()
+            print(f"🔍 API keys query result: {len(api_keys_result.data)} records found")
+            
             if api_keys_result.data:
                 from app.api.users import decrypt_api_key
                 keys_data = api_keys_result.data[0]
-                openai_key = decrypt_api_key(keys_data.get("openai_api_key_encrypted", ""))
-                anthropic_key = decrypt_api_key(keys_data.get("anthropic_api_key_encrypted", ""))
+                
+                print(f"🔍 Raw API key data fields: {list(keys_data.keys())}")
+                
+                openai_encrypted = keys_data.get("openai_api_key_encrypted", "")
+                anthropic_encrypted = keys_data.get("anthropic_api_key_encrypted", "")
+                
+                print(f"🔍 Encrypted keys present - OpenAI: {'✓' if openai_encrypted else '✗'}, Anthropic: {'✓' if anthropic_encrypted else '✗'}")
+                
+                openai_key = decrypt_api_key(openai_encrypted) if openai_encrypted else ""
+                anthropic_key = decrypt_api_key(anthropic_encrypted) if anthropic_encrypted else ""
+                
+                print(f"🔍 Decrypted keys - OpenAI length: {len(openai_key)}, Anthropic length: {len(anthropic_key)}")
                 
                 user_api_keys = {
                     "openai_api_key": openai_key if openai_key else None,
@@ -101,8 +120,12 @@ async def create_annotation(
                 }
                 
                 print(f"🔑 User API keys loaded - OpenAI: {'✓' if openai_key else '✗'}, Anthropic: {'✓' if anthropic_key else '✗'}")
+            else:
+                print(f"🔍 No API keys found for user: {current_user['id']}")
         except Exception as e:
             print(f"Failed to get user API keys: {e}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
         
         # Initialize services with user-specific API keys
         llm_service = LLMService(user_api_keys=user_api_keys)
@@ -131,22 +154,47 @@ async def create_annotation(
             )
         
         # Generate annotation using pipeline
-        result = await llm_service.run_annotation_pipeline(
-            text=request.text,
-            tag_definitions=request.tag_definitions,
-            model=request.model,
-            temperature=request.temperature,
-            max_tokens=request.max_tokens,
-            chunk_size=request.chunk_size,
-            overlap=request.overlap
-        )
+        try:
+            print(f"🚀 Starting annotation pipeline...")
+            print(f"   Text length: {len(request.text)} characters")
+            print(f"   Tag definitions: {len(request.tag_definitions)} tags")
+            print(f"   Model: {request.model}")
+            print(f"   Parameters: temp={request.temperature}, max_tokens={request.max_tokens}, chunk_size={request.chunk_size}")
+            
+            result = await llm_service.run_annotation_pipeline(
+                text=request.text,
+                tag_definitions=request.tag_definitions,
+                model=request.model,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                chunk_size=request.chunk_size,
+                overlap=request.overlap
+            )
+            
+            print(f"✅ Annotation pipeline completed successfully")
+            print(f"   Entities found: {len(result.get('entities', []))}")
+            print(f"   Total tokens: {result.get('statistics', {}).get('total_tokens', 0)}")
+            
+        except Exception as pipeline_error:
+            print(f"💥 Annotation pipeline failed: {pipeline_error}")
+            import traceback
+            print(f"Pipeline traceback: {traceback.format_exc()}")
+            raise pipeline_error
         
         # Calculate cost
-        cost = cost_calc.calculate_cost(
-            model=request.model,
-            input_tokens=result["statistics"]["total_input_tokens"],
-            output_tokens=result["statistics"]["total_output_tokens"]
-        )
+        try:
+            print(f"💰 Calculating cost...")
+            cost = cost_calc.calculate_cost(
+                model=request.model,
+                input_tokens=result["statistics"]["total_input_tokens"],
+                output_tokens=result["statistics"]["total_output_tokens"]
+            )
+            print(f"✅ Cost calculated: ${cost['total_cost']:.6f}")
+        except Exception as cost_error:
+            print(f"💥 Cost calculation failed: {cost_error}")
+            import traceback
+            print(f"Cost calculation traceback: {traceback.format_exc()}")
+            raise cost_error
         
         # Save usage statistics to database
         usage_data = {
@@ -161,9 +209,11 @@ async def create_annotation(
         }
         
         try:
+            print(f"💾 Saving usage statistics to database...")
             db.table("usage_stats").insert(usage_data).execute()
+            print(f"✅ Usage statistics saved successfully")
         except Exception as e:
-            print(f"Failed to save usage stats: {e}")
+            print(f"⚠️  Failed to save usage stats: {e}")
         
         # Save annotation to database (optional)
         annotation_data = {
@@ -185,20 +235,27 @@ async def create_annotation(
         }
         
         try:
+            print(f"💾 Saving annotation to database...")
             db.table("annotations").insert(annotation_data).execute()
+            print(f"✅ Annotation saved successfully")
         except Exception as e:
-            print(f"Failed to save annotation: {e}")
+            print(f"⚠️  Failed to save annotation: {e}")
         
-        return AnnotationResult(
+        print(f"📤 Preparing response...")
+        response = AnnotationResult(
             entities=result["entities"],
             statistics=result["statistics"],
             chunk_results=result.get("chunk_results", [])
         )
+        print(f"✅ Response prepared successfully")
+        return response
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Annotation error: {e}")
+        print(f"💥 Unexpected annotation error: {e}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Annotation failed: {str(e)}"

@@ -63,7 +63,7 @@ const ValidationComponent: React.FC<ValidationProps> = ({
           },
           body: JSON.stringify({
             text,
-            entities,
+            annotations: entities,
           }),
         }
       );
@@ -97,7 +97,8 @@ const ValidationComponent: React.FC<ValidationProps> = ({
           },
           body: JSON.stringify({
             text,
-            entities,
+            annotations: entities,
+            strategy: "fuzzy_match",
           }),
         }
       );

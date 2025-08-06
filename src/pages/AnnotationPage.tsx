@@ -738,11 +738,7 @@ const AnnotationPage: React.FC = () => {
                 )}
 
                 {activeTab === "export" && (
-                  <ExportComponent
-                    text={text}
-                    entities={combinedEntities}
-                    annotationResult={annotationResult}
-                  />
+                  <ExportComponent text={text} entities={combinedEntities} />
                 )}
               </div>
             </div>
