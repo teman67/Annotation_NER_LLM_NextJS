@@ -31,11 +31,29 @@ class LLMService:
             anthropic_key = settings.anthropic_api_key
         
         # Initialize clients
-        if openai_key:
+        if openai_key and self._is_valid_openai_key(openai_key):
             self.openai_client = openai.OpenAI(api_key=openai_key)
         
-        if anthropic_key:
+        if anthropic_key and self._is_valid_anthropic_key(anthropic_key):
             self.anthropic_client = anthropic.Anthropic(api_key=anthropic_key)
+    
+    def _is_valid_openai_key(self, key: str) -> bool:
+        """Check if OpenAI API key format is valid"""
+        return (
+            key and 
+            key != "your-openai-api-key-here" and
+            key.startswith("sk-") and
+            len(key) > 20
+        )
+    
+    def _is_valid_anthropic_key(self, key: str) -> bool:
+        """Check if Anthropic API key format is valid"""
+        return (
+            key and 
+            key != "your-anthropic-api-key-here" and
+            key.startswith("sk-ant-") and
+            len(key) > 20
+        )
     
     def has_openai_client(self) -> bool:
         """Check if OpenAI client is available"""
@@ -143,6 +161,7 @@ class LLMService:
         total_input_tokens = 0
         total_output_tokens = 0
         chunk_results = []
+        failed_chunks = 0
         
         for chunk in chunks:
             try:
@@ -175,13 +194,30 @@ class LLMService:
                 })
                 
             except Exception as e:
+                failed_chunks += 1
+                error_msg = str(e)
+                
+                # Check for critical errors that should fail the entire pipeline
+                if any(critical in error_msg.lower() for critical in [
+                    "api key", "authentication", "unauthorized", "invalid_api_key",
+                    "permission denied", "billing", "quota exceeded"
+                ]):
+                    print(f"💥 Critical error in chunk {chunk['chunk_id']}: {error_msg}")
+                    raise Exception(f"Annotation failed due to API authentication/authorization issue: {error_msg}")
+                
                 chunk_results.append({
                     "chunk_id": chunk["chunk_id"],
-                    "error": str(e),
+                    "error": error_msg,
                     "entities_found": 0,
                     "input_tokens": 0,
                     "output_tokens": 0
                 })
+                
+                print(f"⚠️  Chunk {chunk['chunk_id']} failed: {error_msg}")
+        
+        # If all chunks failed, this is a critical error
+        if failed_chunks == len(chunks):
+            raise Exception(f"All {len(chunks)} chunks failed during annotation. Last error: {chunk_results[-1].get('error', 'Unknown error') if chunk_results else 'No chunks processed'}")
         
         # Remove duplicate entities from overlapping chunks
         all_entities = self._remove_duplicate_entities(all_entities)
@@ -232,8 +268,15 @@ class LLMService:
     ) -> Dict[str, Any]:
         """Annotate using OpenAI GPT models"""
         
+        if not self.openai_client:
+            raise Exception("OpenAI client not initialized. Please check your API key configuration.")
+        
         system_prompt = self._create_system_prompt(tag_definitions)
         user_prompt = self._create_user_prompt(text)
+        
+        print(f"🤖 Making OpenAI API call with model: {model}")
+        print(f"📝 Text length: {len(text)} characters")
+        print(f"🏷️  Tag definitions: {len(tag_definitions) if hasattr(tag_definitions, '__len__') else 'Unknown'}")
         
         try:
             response = self.openai_client.chat.completions.create(
@@ -248,7 +291,15 @@ class LLMService:
             )
             
             result_text = response.choices[0].message.content
-            annotations = json.loads(result_text)
+            print(f"✅ OpenAI response received: {len(result_text)} characters")
+            
+            try:
+                annotations = json.loads(result_text)
+                print(f"📊 Parsed annotations: {len(annotations.get('annotations', []))} entities")
+            except json.JSONDecodeError as json_error:
+                print(f"❌ JSON parsing error: {json_error}")
+                print(f"🔍 Response content: {result_text[:500]}...")
+                raise Exception(f"Failed to parse JSON response: {json_error}")
             
             return {
                 "annotations": annotations.get("annotations", []),
@@ -259,6 +310,7 @@ class LLMService:
             }
             
         except Exception as e:
+            print(f"❌ OpenAI API error: {e}")
             raise Exception(f"OpenAI API error: {str(e)}")
     
     async def _annotate_with_claude(

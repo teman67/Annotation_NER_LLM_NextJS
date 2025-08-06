@@ -92,16 +92,24 @@ async def create_annotation(
             if api_keys_result.data:
                 from app.api.users import decrypt_api_key
                 keys_data = api_keys_result.data[0]
+                openai_key = decrypt_api_key(keys_data.get("openai_api_key_encrypted", ""))
+                anthropic_key = decrypt_api_key(keys_data.get("anthropic_api_key_encrypted", ""))
+                
                 user_api_keys = {
-                    "openai_api_key": decrypt_api_key(keys_data.get("openai_api_key_encrypted", "")),
-                    "anthropic_api_key": decrypt_api_key(keys_data.get("anthropic_api_key_encrypted", ""))
+                    "openai_api_key": openai_key if openai_key else None,
+                    "anthropic_api_key": anthropic_key if anthropic_key else None
                 }
+                
+                print(f"🔑 User API keys loaded - OpenAI: {'✓' if openai_key else '✗'}, Anthropic: {'✓' if anthropic_key else '✗'}")
         except Exception as e:
             print(f"Failed to get user API keys: {e}")
         
         # Initialize services with user-specific API keys
         llm_service = LLMService(user_api_keys=user_api_keys)
         cost_calc = CostCalculator()
+        
+        print(f"🤖 Model requested: {request.model}")
+        print(f"🔍 Available clients - OpenAI: {llm_service.has_openai_client()}, Anthropic: {llm_service.has_anthropic_client()}")
         
         # Check if we have the necessary API key for the requested model
         if request.model.startswith("gpt-") and not llm_service.has_openai_client():
@@ -113,6 +121,13 @@ async def create_annotation(
             raise HTTPException(
                 status_code=400,
                 detail="Anthropic API key not configured. Please add your Anthropic API key in your profile settings."
+            )
+        
+        # Additional check: if no API keys are available at all
+        if not llm_service.has_openai_client() and not llm_service.has_anthropic_client():
+            raise HTTPException(
+                status_code=400,
+                detail="No API keys configured. Please add your OpenAI or Anthropic API key in your profile settings to use annotation features."
             )
         
         # Generate annotation using pipeline
