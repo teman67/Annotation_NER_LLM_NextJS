@@ -224,17 +224,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
+
+        // Handle rate limiting specifically
+        if (res.status === 429) {
+          const errorMessage =
+            errorData.message ||
+            "Too many verification attempts. Please wait before trying again.";
+          toast.error(errorMessage, { duration: 5000 });
+          throw new Error(errorMessage);
+        }
+
         const errorMessage =
           errorData.message || errorData.detail || "Failed to verify email";
         throw new Error(errorMessage);
       }
 
       const data = await res.json();
-      setUser(data.user ? convertUser(data.user) : null);
-      toast.success("Email verified successfully! You are now logged in.");
+
+      // Handle successful verification or already verified case
+      if (data.user) {
+        setUser(convertUser(data.user));
+
+        // Store access token if provided
+        if (data.access_token) {
+          localStorage.setItem("access_token", data.access_token);
+        }
+
+        // Show appropriate success message
+        if (data.message?.includes("already verified")) {
+          toast.success("Email is already verified! You are logged in.");
+        } else {
+          toast.success("Email verified successfully! You are now logged in.");
+        }
+      }
     } catch (error) {
       const errorMessage = getErrorMessage(error);
-      toast.error(errorMessage);
+      // Don't show toast again for rate limiting as we already showed it above
+      if (!errorMessage.includes("Too many")) {
+        toast.error(errorMessage);
+      }
       throw error;
     } finally {
       setLoading(false);

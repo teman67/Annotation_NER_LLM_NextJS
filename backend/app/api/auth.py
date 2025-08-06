@@ -15,27 +15,50 @@ import time
 from app.config import settings
 from app.database import get_db
 
-# Simple in-memory rate limiting for verification attempts
-verification_attempts = {}
+# Simple in-memory rate limiting for verification attempts (only for failed attempts)
+verification_failed_attempts = {}
 
 def is_rate_limited(token: str) -> bool:
-    """Check if a token verification attempt should be rate limited"""
+    """Check if a token verification attempt should be rate limited (only applies to failed attempts)"""
     current_time = time.time()
     
-    # Clean old attempts (older than 5 minutes)
-    for t in list(verification_attempts.keys()):
-        if current_time - verification_attempts[t] > 300:  # 5 minutes
-            del verification_attempts[t]
+    # Clean old failed attempts (older than 15 minutes)
+    for t in list(verification_failed_attempts.keys()):
+        if current_time - verification_failed_attempts[t]["last_attempt"] > 900:  # 15 minutes
+            del verification_failed_attempts[t]
     
-    # Check if this token was attempted recently (within 10 seconds)
-    if token in verification_attempts:
-        time_since_last = current_time - verification_attempts[token]
-        if time_since_last < 10:  # 10 seconds cooldown
+    # Check if this token has too many failed attempts recently
+    if token in verification_failed_attempts:
+        attempt_data = verification_failed_attempts[token]
+        time_since_last = current_time - attempt_data["last_attempt"]
+        
+        # If more than 3 failed attempts in the last 5 minutes, rate limit
+        if attempt_data["count"] >= 3 and time_since_last < 300:  # 5 minutes
+            return True
+        
+        # If last failed attempt was less than 30 seconds ago, rate limit
+        if time_since_last < 30:  # 30 seconds cooldown after failed attempt
             return True
     
-    # Record this attempt
-    verification_attempts[token] = current_time
     return False
+
+def record_failed_verification(token: str):
+    """Record a failed verification attempt"""
+    current_time = time.time()
+    
+    if token in verification_failed_attempts:
+        verification_failed_attempts[token]["count"] += 1
+        verification_failed_attempts[token]["last_attempt"] = current_time
+    else:
+        verification_failed_attempts[token] = {
+            "count": 1,
+            "last_attempt": current_time
+        }
+
+def clear_failed_verification(token: str):
+    """Clear failed verification attempts for a token (called on successful verification)"""
+    if token in verification_failed_attempts:
+        del verification_failed_attempts[token]
 
 class UserProfileUpdate(BaseModel):
     full_name: Optional[str] = None
@@ -256,14 +279,14 @@ async def register(user: UserCreate):
 @router.post("/verify-email")
 async def verify_email(verification: EmailVerification):
     try:
-        # Rate limiting check
+        # Rate limiting check (only for failed attempts)
         if is_rate_limited(verification.token):
             print(f"🚫 Rate limited verification attempt for token: {verification.token[:10]}...")
             return JSONResponse(
                 status_code=429,
                 content={
                     "error": True,
-                    "message": "Too many verification attempts. Please wait a moment."
+                    "message": "Too many failed verification attempts. Please wait before trying again."
                 }
             )
         
@@ -276,6 +299,8 @@ async def verify_email(verification: EmailVerification):
         user = db.table("users").select("*").eq("email_verification_token", verification.token).execute()
         if not user.data:
             print(f"❌ Token not found in database: {verification.token[:10]}...")
+            # Record failed attempt
+            record_failed_verification(verification.token)
             return JSONResponse(
                 status_code=400,
                 content={
@@ -290,19 +315,27 @@ async def verify_email(verification: EmailVerification):
         # Check if already verified
         if user_data.get("email_verified", False):
             print(f"⚠️ Email already verified for user: {user_data['email']}")
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "error": True,
-                    "message": "Email is already verified"
+            # Clear any failed attempts since verification is successful
+            clear_failed_verification(verification.token)
+            # Return success with user data for already verified accounts
+            return {
+                "message": "Email is already verified!",
+                "access_token": None,
+                "token_type": "bearer",
+                "user": {
+                    "id": user_data["id"],
+                    "email": user_data["email"],
+                    "full_name": user_data["full_name"]
                 }
-            )
+            }
         
         # Check if token has expired
         if user_data.get("email_verification_expires"):
             expires_at = datetime.fromisoformat(user_data["email_verification_expires"].replace('Z', '+00:00'))
             if datetime.utcnow().replace(tzinfo=expires_at.tzinfo) > expires_at:
                 print(f"⏰ Token expired for user: {user_data['email']}")
+                # Record failed attempt for expired token
+                record_failed_verification(verification.token)
                 return JSONResponse(
                     status_code=400,
                     content={
@@ -319,6 +352,9 @@ async def verify_email(verification: EmailVerification):
             "email_verification_expires": None,
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", user_data["id"]).execute()
+        
+        # Clear any failed verification attempts since this was successful
+        clear_failed_verification(verification.token)
         
         # Create access token for automatic login
         access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
@@ -339,6 +375,8 @@ async def verify_email(verification: EmailVerification):
         }
     except Exception as e:
         print(f"💥 Email verification error: {str(e)}")
+        # Record failed attempt for any server errors
+        record_failed_verification(verification.token)
         return JSONResponse(
             status_code=500,
             content={

@@ -51,7 +51,18 @@ const EmailVerificationPage: React.FC = () => {
       } catch (err) {
         // Don't show error if request was aborted
         if (!(err instanceof Error) || err.name !== "AbortError") {
-          setError(err instanceof Error ? err.message : "Verification failed");
+          const errorMessage =
+            err instanceof Error ? err.message : "Verification failed";
+
+          // Handle rate limiting specifically
+          if (errorMessage.includes("Too many")) {
+            // Show a more user-friendly message for rate limiting
+            setError(
+              "Please wait a moment before trying again. If you continue to have issues, try refreshing the page."
+            );
+          } else {
+            setError(errorMessage);
+          }
         }
       } finally {
         setVerifying(false);
