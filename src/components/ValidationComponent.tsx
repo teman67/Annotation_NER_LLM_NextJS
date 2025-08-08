@@ -11,7 +11,6 @@ interface AnnotationEntity {
   end_char: number;
   text: string;
   label: string;
-  confidence?: number;
   source?: "llm" | "manual";
 }
 

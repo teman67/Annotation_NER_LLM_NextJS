@@ -10,7 +10,6 @@ interface AnnotationEntity {
   end_char: number;
   text: string;
   label: string;
-  confidence?: number;
   source?: "llm" | "manual";
 }
 
@@ -125,7 +124,7 @@ const ExportComponent: React.FC<ExportProps> = ({ text, entities }) => {
                     Tabular format for spreadsheet analysis
                   </div>
                   <div>
-                    • Columns: text, label, start_char, end_char, confidence
+                    • Columns: text, label, start_char, end_char, source
                   </div>
                 </div>
               )}

@@ -50,11 +50,9 @@ class ExportService:
                 "start_char": ann.get("start_char", 0),
                 "end_char": ann.get("end_char", 0),
                 "text": ann.get("text", ""),
-                "label": ann.get("label", "")
+                "label": ann.get("label", ""),
+                "source": ann.get("source", "llm")
             }
-            # Add confidence if available
-            if "confidence" in ann:
-                clean_ann["confidence"] = ann["confidence"]
             clean_annotations.append(clean_ann)
         
         result = {
@@ -94,14 +92,14 @@ class ExportService:
                 "text": ann.get("text", ""),
                 "label": ann.get("label", ""),
                 "length": len(ann.get("text", "")),
-                "confidence": ann.get("confidence", "")
+                "source": ann.get("source", "llm")
             }
             csv_data.append(row)
         
         # Convert to CSV string
         output = io.StringIO()
         if csv_data:
-            fieldnames = ["id", "start_char", "end_char", "text", "label", "length", "confidence"]
+            fieldnames = ["id", "start_char", "end_char", "text", "label", "length", "source"]
             writer = csv.DictWriter(output, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(csv_data)
@@ -215,7 +213,7 @@ class ExportService:
             }
             
             # Add optional fields
-            for field in ["confidence", "chunk_id", "source"]:
+            for field in ["chunk_id", "source"]:
                 if field in ann:
                     clean_ann[field] = ann[field]
             
@@ -286,7 +284,6 @@ class ExportService:
                 "total_entities": 0,
                 "labels": {},
                 "sources": {},
-                "avg_confidence": 0,
                 "text_length_stats": {}
             }
         
@@ -302,10 +299,6 @@ class ExportService:
             source = ann.get("source", "unknown")
             source_counts[source] = source_counts.get(source, 0) + 1
         
-        # Calculate average confidence
-        confidences = [ann.get("confidence", 0) for ann in annotations if "confidence" in ann]
-        avg_confidence = sum(confidences) / len(confidences) if confidences else 0
-        
         # Text length statistics
         text_lengths = [len(ann.get("text", "")) for ann in annotations]
         text_length_stats = {
@@ -318,7 +311,5 @@ class ExportService:
             "total_entities": len(annotations),
             "labels": label_counts,
             "sources": source_counts,
-            "avg_confidence": avg_confidence,
-            "text_length_stats": text_length_stats,
-            "has_confidence_scores": len(confidences) > 0
+            "text_length_stats": text_length_stats
         }

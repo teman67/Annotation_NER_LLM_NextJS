@@ -1,8 +1,6 @@
 import React, { useState, useMemo } from "react";
 import {
   PlayIcon,
-  EyeIcon,
-  TrashIcon,
   AdjustmentsHorizontalIcon,
   CheckCircleIcon,
   ArrowDownTrayIcon,
@@ -11,6 +9,7 @@ import LoadingSpinner from "../components/LoadingSpinner";
 import ExportComponent from "../components/ExportComponent";
 import ValidationComponent from "../components/ValidationComponent";
 import CostCalculator from "../components/CostCalculator";
+import AnnotationTable from "../components/AnnotationTable";
 import { API_CONFIG } from "../constants/api";
 
 // Local types for annotation
@@ -25,7 +24,6 @@ interface AnnotationEntity {
   end_char: number;
   text: string;
   label: string;
-  confidence?: number;
   source?: "llm" | "manual";
 }
 
@@ -66,8 +64,8 @@ const AnnotationPage: React.FC = () => {
 
   // UI state
   const [activeTab, setActiveTab] = useState<
-    "annotation" | "validation" | "export"
-  >("annotation");
+    "annotations" | "validation" | "export"
+  >("annotations");
   const [showSettings, setShowSettings] = useState(false);
   const [selectedText, setSelectedText] = useState("");
   const [selectedRange, setSelectedRange] = useState<{
@@ -193,7 +191,6 @@ const AnnotationPage: React.FC = () => {
       end_char: selectedRange.end,
       text: selectedText,
       label,
-      confidence: 1.0,
       source: "manual",
     };
 
@@ -208,6 +205,55 @@ const AnnotationPage: React.FC = () => {
       setManualEntities((prev) => prev.filter((e) => e !== entity));
     } else {
       setEntities((prev) => prev.filter((e) => e !== entity));
+    }
+  };
+
+  // Handle entity update from AnnotationTable
+  const handleUpdateEntity = (
+    index: number,
+    updatedEntity: AnnotationEntity
+  ) => {
+    const entityToUpdate = combinedEntities[index];
+    if (!entityToUpdate) return;
+
+    if (entityToUpdate.source === "manual") {
+      setManualEntities((prev) => {
+        const newEntities = [...prev];
+        const manualIndex = newEntities.findIndex(
+          (e) =>
+            e.start_char === entityToUpdate.start_char &&
+            e.end_char === entityToUpdate.end_char &&
+            e.text === entityToUpdate.text &&
+            e.label === entityToUpdate.label
+        );
+        if (manualIndex !== -1) {
+          newEntities[manualIndex] = { ...updatedEntity, source: "manual" };
+        }
+        return newEntities;
+      });
+    } else {
+      setEntities((prev) => {
+        const newEntities = [...prev];
+        const llmIndex = newEntities.findIndex(
+          (e) =>
+            e.start_char === entityToUpdate.start_char &&
+            e.end_char === entityToUpdate.end_char &&
+            e.text === entityToUpdate.text &&
+            e.label === entityToUpdate.label
+        );
+        if (llmIndex !== -1) {
+          newEntities[llmIndex] = { ...updatedEntity, source: "llm" };
+        }
+        return newEntities;
+      });
+    }
+  };
+
+  // Handle entity deletion from AnnotationTable
+  const handleDeleteEntity = (index: number) => {
+    const entityToDelete = combinedEntities[index];
+    if (entityToDelete) {
+      handleRemoveEntity(entityToDelete);
     }
   };
 
@@ -247,9 +293,7 @@ const AnnotationPage: React.FC = () => {
             isSelected ? "ring-2 ring-indigo-500" : ""
           }`}
           onClick={() => setSelectedEntity(isSelected ? null : entity)}
-          title={`${entity.label} (${entity.source}) - Confidence: ${
-            entity.confidence || "N/A"
-          }`}
+          title={`${entity.label} (${entity.source})`}
         >
           {entity.text}
         </span>
@@ -618,80 +662,22 @@ const AnnotationPage: React.FC = () => {
             </div>
           )}
 
-          {/* Entity List */}
-          {combinedEntities.length > 0 && (
-            <div className="bg-white shadow rounded-lg mb-6">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900">
-                  📝 Annotations List
-                </h3>
-              </div>
-              <div className="p-6">
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {combinedEntities.map((entity, index) => (
-                    <div
-                      key={index}
-                      className={`flex items-center justify-between p-3 border rounded-lg ${
-                        entity.source === "manual"
-                          ? "bg-yellow-50 border-yellow-200"
-                          : "bg-blue-50 border-blue-200"
-                      } ${
-                        selectedEntity === entity
-                          ? "ring-2 ring-indigo-500"
-                          : ""
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center space-x-2">
-                          <span className="font-medium text-gray-900">
-                            "{entity.text}"
-                          </span>
-                          <span
-                            className={`px-2 py-1 rounded text-xs font-medium ${
-                              entity.source === "manual"
-                                ? "bg-yellow-100 text-yellow-800"
-                                : "bg-blue-100 text-blue-800"
-                            }`}
-                          >
-                            {entity.label}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            {entity.source} • [{entity.start_char}:
-                            {entity.end_char}]
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() =>
-                            setSelectedEntity(
-                              selectedEntity === entity ? null : entity
-                            )
-                          }
-                          className="p-1 text-gray-400 hover:text-gray-600"
-                        >
-                          <EyeIcon className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleRemoveEntity(entity)}
-                          className="p-1 text-red-400 hover:text-red-600"
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Advanced Features Tabs */}
           {combinedEntities.length > 0 && (
             <div className="bg-white shadow rounded-lg">
               {/* Tab Navigation */}
               <div className="border-b border-gray-200">
                 <nav className="-mb-px flex space-x-8 px-6" aria-label="Tabs">
+                  <button
+                    onClick={() => setActiveTab("annotations")}
+                    className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                      activeTab === "annotations"
+                        ? "border-primary-500 text-primary-600"
+                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    }`}
+                  >
+                    📝 Annotations Table
+                  </button>
                   <button
                     onClick={() => setActiveTab("validation")}
                     className={`py-4 px-1 border-b-2 font-medium text-sm ${
@@ -718,7 +704,17 @@ const AnnotationPage: React.FC = () => {
               </div>
 
               {/* Tab Content */}
-              <div className="p-6">
+              <div className={activeTab === "annotations" ? "p-0" : "p-6"}>
+                {activeTab === "annotations" && (
+                  <AnnotationTable
+                    entities={combinedEntities}
+                    onUpdateEntity={handleUpdateEntity}
+                    onDeleteEntity={handleDeleteEntity}
+                    availableTags={tags.map((tag) => tag.tag_name)}
+                    text={text}
+                  />
+                )}
+
                 {activeTab === "validation" && (
                   <ValidationComponent
                     text={text}
